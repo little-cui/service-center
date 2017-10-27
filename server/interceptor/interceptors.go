@@ -14,24 +14,13 @@
 package interceptor
 
 import (
+	"github.com/ServiceComb/service-center/pkg/chain"
+	roa "github.com/ServiceComb/service-center/pkg/rest"
 	"github.com/ServiceComb/service-center/pkg/util"
 	"net/http"
 	"reflect"
 	"runtime"
 )
-
-type Phase string
-
-const (
-	ACCESS_PHASE  Phase = "ACCESS PHASE"
-	FILTER_PHASE  Phase = "FILTER PHASE"
-	CONTENT_PHASE Phase = "CONTENT PHASE"
-	LOG_PHASE     Phase = "LOG PHASE"
-
-	DEFAULT_INTERCEPTION_SIZE = 10
-)
-
-var interceptors map[Phase][]*Interception
 
 type InterceptorFunc func(http.ResponseWriter, *http.Request) error
 
@@ -39,45 +28,29 @@ func (f InterceptorFunc) Name() string {
 	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 }
 
-type Interception struct {
+type Interceptor struct {
 	function InterceptorFunc
 }
 
 // Invoke performs the given interception.
 // val is a pointer to the App Controller.
-func (i Interception) Invoke(w http.ResponseWriter, req *http.Request) error {
-	return i.function(w, req)
-}
-
-func init() {
-	interceptors = make(map[Phase][]*Interception)
+func (i *Interceptor) Handle(inv *chain.Invocation) {
+	ctx := inv.HandlerContext()
+	err := i.function(ctx[roa.CTX_SERVER_RESP].(http.ResponseWriter), ctx[roa.CTX_SERVER_REQ].(*http.Request))
+	if err != nil {
+		inv.Fail(err)
+		return
+	}
+	inv.Next()
 }
 
 // InterceptFunc installs a general interceptor.
 // This can be applied to any Controller.
 // It must have the signature of:
 //   func example(c *revel.Controller) revel.Result
-func InterceptFunc(phase Phase, intc InterceptorFunc) {
-	iters, ok := interceptors[phase]
-	if !ok {
-		iters = make([]*Interception, 0, DEFAULT_INTERCEPTION_SIZE)
-	}
-
-	iters = append(iters, &Interception{
+func RegisterInterceptFunc(intc InterceptorFunc) {
+	chain.RegisterHandler(roa.SERVER_HANDLER_CATALOG, &Interceptor{
 		function: intc,
 	})
-
-	interceptors[phase] = iters
-
-	util.Logger().Infof("Intercept %s at %s", intc.Name(), phase)
-}
-
-func InvokeInterceptors(phase Phase, w http.ResponseWriter, req *http.Request) error {
-	for _, intc := range interceptors[phase] {
-		err := intc.Invoke(w, req)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	util.Logger().Infof("Intercept %s", intc.Name())
 }

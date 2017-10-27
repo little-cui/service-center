@@ -16,10 +16,20 @@ package rest
 import (
 	"errors"
 	"fmt"
+	"github.com/ServiceComb/service-center/pkg/chain"
+	errorsEx "github.com/ServiceComb/service-center/pkg/errors"
 	"github.com/ServiceComb/service-center/pkg/util"
+	"golang.org/x/net/context"
 	"net/http"
 	"net/url"
 	"strings"
+)
+
+const (
+	CTX_SERVER_RESP        = "_server_response"
+	CTX_SERVER_REQ         = "_server_request"
+	SERVER_CHAIN_NAME      = "_server_chain"
+	SERVER_HANDLER_CATALOG = "_server_handlers"
 )
 
 type URLPattern struct {
@@ -47,13 +57,11 @@ type Route struct {
 //   2. redirect not supported
 type ROAServerHandler struct {
 	handlers map[string][]*urlPatternHandler
-	filters []Filter
 }
 
 func NewROAServerHander() *ROAServerHandler {
 	return &ROAServerHandler{
 		handlers: make(map[string][]*urlPatternHandler),
-		filters: make([]Filter, 0, 5),
 	}
 }
 
@@ -79,11 +87,7 @@ func (this *ROAServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				r.URL.RawQuery = url.Values(params).Encode() + "&" + r.URL.RawQuery
 			}
 
-			if err = this.doFilter(r); err != nil {
-				break
-			}
-
-			ph.ServeHTTP(w, r)
+			this.serve(ph, w, r)
 			return
 		}
 	}
@@ -115,13 +119,36 @@ func (this *ROAServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	http.Error(w, "Method Not Allowed", 405)
 }
 
-func (this *ROAServerHandler) doFilter(r *http.Request) error {
-	for _, f := range this.filters {
-		if f.IsMatch(r) {
-			return f.Do(r)
-		}
+func (this *ROAServerHandler) serve(ph http.Handler, w http.ResponseWriter, req *http.Request) {
+	hs := chain.Handlers(SERVER_HANDLER_CATALOG)
+	if len(hs) == 0 {
+		ph.ServeHTTP(w, req)
+		return
 	}
-	return nil
+
+	ctx, cancel := context.WithCancel(context.Background())
+	inv := chain.NewInvocation(chain.NewChain(SERVER_CHAIN_NAME, hs...))
+	inv.WithHandlerContext(CTX_SERVER_RESP, w).WithHandlerContext(CTX_SERVER_REQ, req)
+	inv.Invoke(func(r chain.Result) {
+		defer func() {
+			defer cancel()
+			itf := recover()
+			if itf != nil {
+				util.Logger().Errorf(nil, "recover! %v", itf)
+
+				r.Err = errorsEx.RaiseError(itf)
+			}
+			err, ok := r.Err.(errorsEx.InternalError)
+			if !ok {
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}()
+		if r.OK {
+			ph.ServeHTTP(w, req)
+		}
+	})
+	<-ctx.Done()
 }
 
 func (this *urlPatternHandler) try(path string) (p map[string][]string, _ bool) {
@@ -183,9 +210,4 @@ func isDigit(ch byte) bool {
 
 func isAlnum(ch byte) bool {
 	return isAlpha(ch) || isDigit(ch)
-}
-
-type Filter interface {
-	IsMatch(r *http.Request) bool
-	Do(r *http.Request) error
 }
