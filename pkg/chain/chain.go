@@ -16,14 +16,12 @@ package chain
 import (
 	errorsEx "github.com/ServiceComb/service-center/pkg/errors"
 	"github.com/ServiceComb/service-center/pkg/util"
-	"sync"
 )
 
 type Chain struct {
 	name         string
 	handlers     []Handler
 	currentIndex int
-	mux          sync.Mutex
 }
 
 func (c *Chain) Init(chainName string, hs []Handler) {
@@ -39,7 +37,7 @@ func (c *Chain) Name() string {
 	return c.name
 }
 
-func (c *Chain) doNext(i *Invocation) {
+func (c *Chain) syncNext(i *Invocation) {
 	defer func() {
 		itf := recover()
 		if itf == nil {
@@ -58,8 +56,8 @@ func (c *Chain) doNext(i *Invocation) {
 	c.handlers[c.currentIndex].Handle(i)
 }
 
-func (c *Chain) next(i *Invocation) {
-	go c.doNext(i)
+func (c *Chain) Next(i *Invocation) {
+	go c.syncNext(i)
 }
 
 func NewChain(name string, handlers ...Handler) *Chain {

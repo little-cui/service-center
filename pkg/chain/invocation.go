@@ -55,7 +55,7 @@ func (i *Invocation) Next() {
 		i.Fail(errors.New("Can not find any chain for this invocation"))
 		return
 	}
-	i.chain.next(i)
+	i.chain.Next(i)
 }
 
 func (i *Invocation) Invoke(f func(r Result)) {

@@ -19,9 +19,7 @@ import (
 	"github.com/ServiceComb/service-center/pkg/chain"
 	errorsEx "github.com/ServiceComb/service-center/pkg/errors"
 	"github.com/ServiceComb/service-center/pkg/util"
-	"golang.org/x/net/context"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -84,7 +82,7 @@ func (this *ROAServerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	for _, ph := range this.handlers[r.Method] {
 		if params, ok := ph.try(r.URL.Path); ok {
 			if len(params) > 0 {
-				r.URL.RawQuery = url.Values(params).Encode() + "&" + r.URL.RawQuery
+				r.URL.RawQuery = util.UrlEncode(params) + "&" + r.URL.RawQuery
 			}
 
 			this.serve(ph, w, r)
@@ -126,12 +124,12 @@ func (this *ROAServerHandler) serve(ph http.Handler, w http.ResponseWriter, req 
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan struct{})
 	inv := chain.NewInvocation(chain.NewChain(SERVER_CHAIN_NAME, hs...))
 	inv.WithHandlerContext(CTX_SERVER_RESP, w).WithHandlerContext(CTX_SERVER_REQ, req)
 	inv.Invoke(func(r chain.Result) {
 		defer func() {
-			defer cancel()
+			defer close(ch)
 			itf := recover()
 			if itf != nil {
 				util.Logger().Errorf(nil, "recover! %v", itf)
@@ -148,15 +146,16 @@ func (this *ROAServerHandler) serve(ph http.Handler, w http.ResponseWriter, req 
 			ph.ServeHTTP(w, req)
 		}
 	})
-	<-ctx.Done()
+	<-ch
 }
 
-func (this *urlPatternHandler) try(path string) (p map[string][]string, _ bool) {
+func (this *urlPatternHandler) try(path string) (p map[string]string, _ bool) {
 	var i, j int
-	for i < len(path) {
+	l, sl := len(this.Path), len(path)
+	for i < sl {
 		switch {
-		case j >= len(this.Path):
-			if this.Path != "/" && len(this.Path) > 0 && this.Path[len(this.Path)-1] == '/' {
+		case j >= l:
+			if this.Path != "/" && l > 0 && this.Path[l-1] == '/' {
 				return p, true
 			}
 			return nil, false
@@ -168,9 +167,9 @@ func (this *urlPatternHandler) try(path string) (p map[string][]string, _ bool) 
 			val, _, i = match(path, matchParticial, nextc, i)
 
 			if p == nil {
-				p = make(map[string][]string)
+				p = make(map[string]string, 5)
 			}
-			p[this.Path[o:j]] = []string{val}
+			p[this.Path[o:j]] = val
 		case path[i] == this.Path[j]:
 			i++
 			j++
@@ -178,7 +177,7 @@ func (this *urlPatternHandler) try(path string) (p map[string][]string, _ bool) 
 			return nil, false
 		}
 	}
-	if j != len(this.Path) {
+	if j != l {
 		return nil, false
 	}
 	return p, true

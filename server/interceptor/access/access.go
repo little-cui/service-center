@@ -21,19 +21,12 @@ import (
 	"net/http"
 )
 
-var serverName string
-
-func addCommonResponseHeaders(w http.ResponseWriter) {
-	if len(serverName) == 0 {
-		serverName = core.Service.ServiceName + "/" + core.Service.Version
-	}
-	w.Header().Add("server", serverName)
-}
+var serverName string = core.Service.ServiceName + "/" + core.Service.Version
 
 func Intercept(w http.ResponseWriter, r *http.Request) error {
-	util.InitContext(r)
+	w.Header().Add("server", serverName)
 
-	addCommonResponseHeaders(w)
+	util.InitContext(r)
 
 	if !validate.IsRequestURI(r.RequestURI) {
 		err := fmt.Errorf("Invalid Request URI %s", r.RequestURI)

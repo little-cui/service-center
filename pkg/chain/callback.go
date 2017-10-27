@@ -36,14 +36,16 @@ type Callback struct {
 }
 
 func (cb *Callback) Invoke(r Result) {
-	go func() {
-		defer util.RecoverAndReport()
-		if cb.Func == nil {
-			util.Logger().Errorf(nil, "Callback function is nil. result: %s,", r)
-			return
-		}
-		cb.Func(r)
-	}()
+	go cb.syncInvoke(r)
+}
+
+func (cb *Callback) syncInvoke(r Result) {
+	defer util.RecoverAndReport()
+	if cb.Func == nil {
+		util.Logger().Errorf(nil, "Callback function is nil. result: %s,", r)
+		return
+	}
+	cb.Func(r)
 }
 
 func (cb *Callback) Fail(err error, args ...interface{}) {

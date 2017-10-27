@@ -270,3 +270,15 @@ func BytesToInt32(bs []byte) (in int32) {
 	}
 	return
 }
+
+func UrlEncode(keys map[string]string) string {
+	l := len(keys)
+	if l == 0 {
+		return ""
+	}
+	arr := make([]string, 0, l)
+	for k, v := range keys {
+		arr = append(arr, url.QueryEscape(k)+"="+url.QueryEscape(v))
+	}
+	return StringJoin(arr, "&")
+}
