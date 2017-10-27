@@ -209,10 +209,11 @@ func StringJoin(args []string, sep string) string {
 	}
 }
 
-func RecoverAndReport() {
-	if r := recover(); r != nil {
+func RecoverAndReport() (r interface{}) {
+	if r = recover(); r != nil {
 		Logger().Errorf(nil, "recover! %v", r)
 	}
+	return
 }
 
 func ParseEndpoint(ep string) (string, error) {
