@@ -48,7 +48,7 @@ func TestLoadStruct(t *testing.T) {
 	obj2 := testStru{}
 	v = ReflectObject(obj2)
 	v = ReflectObject(&obj2)
-	v = ReflectObject(&obj2)
+	v = ReflectObject(nil)
 }
 
 func BenchmarkLoadStruct(b *testing.B) {
